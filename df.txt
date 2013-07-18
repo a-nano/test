@@ -1,0 +1,8 @@
+Filesystem                Size      Used     Avail Capacity Mounted on
+/dev/disk0s3             128Mi      48Mi      80Mi  38% /Volumes/Boot OS X 
+/dev/disk1s3             128Mi      48Mi      80Mi  38% /Volumes/Boot OS X 1
+/dev/disk2               465Gi     100Gi     366Gi  22% /   
+devfs                    229Ki     229Ki       0Bi 100% /dev   
+map                     -fstab       0Bi       0Bi  0Bi 100% /Network/Servers  
+map                     -hosts       0Bi       0Bi  0Bi 100% /net  
+map                  auto_home       0Bi       0Bi  0Bi 100% /home  
