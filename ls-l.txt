@@ -1,0 +1,9 @@
+total 96
+drwxr-xr-x+  8 pjb  staff    272 Jul 18 16:07 ./
+drwxr-xr-x+ 28 pjb  staff    952 Jul 18 16:07 ../
+drwxr-xr-x+ 14 pjb  staff    476 Jul 18 16:06 .git/
+-rw-r--r--+  1 pjb  staff    231 Jul 18 16:04 .gitignore
+-rw-r--r--+  1 pjb  staff  34500 Jul 18 16:04 LICENSE
+-rw-r--r--+  1 pjb  staff     54 Jul 18 16:04 README.md
+-rw-r--r--+  1 pjb  staff     60 Jul 18 16:07 file.txt
+-rw-r--r--+  1 pjb  staff      0 Jul 18 16:07 ls-l.txt
