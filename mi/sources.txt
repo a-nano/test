@@ -1,0 +1,1 @@
+wget http://ludovic.rousseau.free.fr/softwares/pcsc-tools/smartcard_list.txt --output-document=/home/pjb/.cache/smartcard_list.txt
