@@ -1,0 +1,29 @@
+2017-09-11  Nicolas Petton  <nicolas@petton.fr>
+
+	* Version 25.3 released.
+
+This file records repository revisions from
+commit 3a34412caae002accd0fc7a7fc0b718c2f34159b (exclusive) to
+commit 784602b10506c50075aa9463891a47380ebea55f (inclusive).
+See ChangeLog.2 for earlier changes.
+
+;; Local Variables:
+;; coding: utf-8
+;; End:
+
+  Copyright (C) 2017 Free Software Foundation, Inc.
+
+  This file is part of GNU Emacs.
+
+  GNU Emacs is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  GNU Emacs is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
