@@ -26,7 +26,7 @@
          (ins   (aref bytes 1))
          (p1    (aref bytes 2))
          (p2    (aref bytes 3)))
-    (list 
+    (list
      (cond
        ((= class #xFF) (list 'class 'invalid))
        ((zerop (ldb (byte 1 7) class))
@@ -46,7 +46,7 @@
                                     :logical-channel  ,logical-channel
                                     :secure-messaging ,secure-messaging
                                     :last-command-p ,last-command-p))))
-          
+
           ((= #b01  (ldb (byte 2 6) class))
            (let ((last-command-p (zerop (ldb (byte 1 4) class)))
                  (secure-messaging (case (ldb (byte 1 5) class)
@@ -57,7 +57,7 @@
                                             :logical-channel  ,(+ 4 logical-channel)
                                             :secure-messaging ,secure-messaging
                                             :last-command-p ,last-command-p))))))
-       
+
        (t
         ;; proprietary class
         `(class (proprietary ,class))))
@@ -118,7 +118,7 @@
            (sw  (dpb sw1 (byte 8 8) sw2)))
       `(response
         ,(case sw1
-           
+
            (#x61 `(info
                    (format nil "~D byte~:*~P still available" sw2)
                    sw2))
@@ -136,7 +136,7 @@
                        (cond ((<= #x02 sw2 #x80)  (triggering sw2))
                              (t                   (unknown sw1 sw2)))))
                    non-volatile-memory-unchanged))
-           
+
            (#x63 `(warning
                    ,(case sw2
                       (#x00 "No information given")
@@ -146,7 +146,7 @@
                              (t                   (unknown sw1 sw2)))))
                    non-volatile-memory-changed
                    ,@(cond ((<= #xC0 sw2 #xCF) (list (ldb (byte 4 0) sw2))))))
-           
+
            (#x64 `(execution-error
                    ,(case sw2
                       (#x00 "Execution error")
@@ -155,23 +155,23 @@
                        (cond ((<= #x02 sw2 #x80)   (triggering sw2))
                              (t                    (unknown sw1 sw2)))))
                    non-volatile-memory-unchanged))
-           
+
            (#x65 `(execution-error
                    ,(case sw2
                       (#x00 "No information given")
                       (#x81 "Memory failure")
                       (otherwise (unknown sw1 sw2)))
                    non-volatile-memory-changed))
-           
+
            (#x66 `(execution-error
                    ,(unknown sw1 sw2)
                    security-related-issues))
-           
+
            (#x67 `(checking-error
                    ,(case sw2
                       (#x00 "Wrong length")
                       (otherwise (proprietary sw1 sw2)))))
-           
+
            (#x68 `(checking-error
                    ,(case sw2
                       (#x00 "No information given")
@@ -181,7 +181,7 @@
                       (#x84 "Command chaining not supported")
                       (otherwise (unknown sw1 sw2)))
                    functions-in-cla-not-supported))
-           
+
            (#x69 `(checking-error
                    ,(case sw2
                       (#x00 "No information given")
@@ -217,7 +217,7 @@
                    ,(format nil "Wrong Le field: ~D available data byte~:*~P" sw2)
                    wrong-le-field
                    ,sw2))
-           
+
            (#x6B `(checking-error
                    ,(case sw2
                       (#x00 "Wrong parameters P1-P2")
@@ -228,17 +228,17 @@
                    ,(case sw2
                       (#x00 "Instruction code not supported or invalid")
                       (otherwise (proprietary)))))
-           
+
            (#x6E `(checking-error
                    ,(case sw2
                       (#x00 "Class not supported")
                       (otherwise (proprietary sw1 sw2)))))
-           
+
            (#x6F `(checking-error
                    ,(case sw2
                       (#x00 "No precise diagnosis")
                       (otherwise (proprietary sw1 sw2)))))
-           
+
            (#x90 `(info
                   ,(case sw2
                      (#x00 "Process completed so far")
@@ -288,7 +288,16 @@
   (encode-simple-tlv type (coerce data '(vector (unsigned-byte 8)))))
 
 (defmethod  decode-simple-tlv (bytes &key (start 0))
-)
+  (let ((type (aref bytes start))
+        (len  (aref bytes (incf start))))
+    (when (= len #xff)
+      (setf len (dpb (aref bytes (incf start))
+                     (byte 8 8)
+                     (aref bytes (incf start)))))
+    (list type len
+          (if (zerop len)
+              nil
+              (make-array len :element-type '(unsigned-byte 8))))))
 
 (defun test/encode-simple-tlv ()
   (assert (equalp (encode-simple-tlv 33 '(1 2 3 4))
@@ -311,4 +320,6 @@
 (let ((*print-right-margin* 80)
       (*print-circle* nil))
   (pprint (mapcar (function describe-apdu)
-                  (load-trace #P"~/src/span/sources/smartcard.trace"))))3
+                  (load-trace #P"~/src/public/test/smartcard/smartcard.trace"))))
+
+
