@@ -21,88 +21,185 @@
 
 
 
-(defun describe-command-apdu (bytes)
-  (let* ((class (aref bytes 0))
-         (ins   (aref bytes 1))
-         (p1    (aref bytes 2))
-         (p2    (aref bytes 3)))
-    (list
+#|
+Lc, Le: when present, either both short (1 byte) or both long (3 or 2 bytes).
+
+(length bytes)
+
+ Lc=0, Le=0  -> 0   4
+
+ Lc=1, Le=0  -> 1   5   Lc:1..255
+ Lc=0, Le=1  -> 1   5
+ Lc=1, Le=1  -> 2   6   Lc:1..255
+
+ Lc=0, Le=3  -> 3   7                 Le:0,0..65535
+ Lc=3, Le=0  -> 3   7   Lc:0,0..65535
+ Lc=3, Le=2  -> 5   9   Lc:0,0..65535,Le:0..65535
+
+|#
+
+(defun decode-lengths-and-data (bytes)
+  ;; This is wrong: in some cases the Ne is interpreted as Nc (when Lc is actually 0).
+  (let (nc)
+   (cond
+     ((= 4 (length bytes))
+      ;; Lc=0
+      (values 0 nil 0))
+     ((zerop (aref bytes 4))
+      (if (<= 7 (length bytes))
+          (values (setf nc (dpb (aref bytes 5) (byte 8 8) (aref bytes 6)))
+                  (nsubseq bytes 7 (+ 7 nc))
+                  (if (< (+ 7 nc) (length bytes))
+                      (dpb (aref bytes (+ 7 nc)) (byte 8 8) (aref bytes (+ 8 nc)))
+                      0))
+          (values (setf nc 0)
+                  nil
+                  (case (- (length bytes) 4)
+                    ((0) 0)
+                    ((1) (aref bytes 4))
+                    ((2) (dpb (aref bytes 4) (byte 8 8) (aref bytes 5)))
+                    (otherwise
+                     (unless (< 3 (- (length bytes) 4))
+                       (format *error-output*
+                               "Warning: command way too long: ~D bytes, expected ~D bytes~%~A"
+                               (length bytes) 7 (dump-to-string bytes)))
+                     (unless (zerop (aref bytes 4))
+                       (format *error-output*
+                               "Warning: non-zero byte as prefix of 3-byte ~
+                                  Ne length: ~D at offset 4~%~A"
+                               (aref bytes 4)
+                               (dump-to-string bytes)))
+                     (dpb (aref bytes 5) (byte 8 8) (aref bytes 6)))))))
+     (t (values (setf nc (aref bytes 4))
+                (nsubseq bytes 5 (+ 5 nc))
+                (if (< (+ 5 nc) (length bytes))
+                    (if (zerop (aref bytes (+ 5 nc)))
+                        256
+                        (aref bytes (+ 5 nc)))
+                    0))))))
+
+(defun decode-class (class)
+  (cond
+    ((= class #xFF) (list 'class 'invalid))
+    ((zerop (ldb (byte 1 7) class))
+     ;; interindustry class
      (cond
-       ((= class #xFF) (list 'class 'invalid))
-       ((zerop (ldb (byte 1 7) class))
-        ;; interindustry class
-        (cond
-          ((= #b001 (ldb (byte 3 5) class))
-           `(class (interindustry-reserved ,class)))
-          ((= #b000  (ldb (byte 3 5) class))
-           (let ((last-command-p (zerop (ldb (byte 1 4) class)))
-                 (secure-messaging (case (ldb (byte 2 2) class)
-                                     (0 'no)
-                                     (1 'proprietary)
-                                     (2 'sm-header-not-processed)
-                                     (3 'sm-header authenticated)))
-                 (logical-channel   (ldb (byte 2 0) class)))
-             `(class (interindustry ,class
-                                    :logical-channel  ,logical-channel
-                                    :secure-messaging ,secure-messaging
-                                    :last-command-p ,last-command-p))))
+       ((= #b001 (ldb (byte 3 5) class))
+        `(class (interindustry-reserved ,class)))
+       ((= #b000  (ldb (byte 3 5) class))
+        (let ((last-command-p (zerop (ldb (byte 1 4) class)))
+              (secure-messaging (case (ldb (byte 2 2) class)
+                                  (0 'no)
+                                  (1 'proprietary)
+                                  (2 'sm-header-not-processed)
+                                  (3 'sm-header-authenticated)))
+              (logical-channel   (ldb (byte 2 0) class)))
+          `(class (interindustry ,class
+                                 :logical-channel  ,logical-channel
+                                 :secure-messaging ,secure-messaging
+                                 :last-command-p ,last-command-p))))
 
-          ((= #b01  (ldb (byte 2 6) class))
-           (let ((last-command-p (zerop (ldb (byte 1 4) class)))
-                 (secure-messaging (case (ldb (byte 1 5) class)
-                                     (0 'no)
-                                     (1 'sm-header-not-processed)))
-                 (logical-channel   (ldb (byte 4 0) class)))
-             `(class (interindustry-further ,class
-                                            :logical-channel  ,(+ 4 logical-channel)
-                                            :secure-messaging ,secure-messaging
-                                            :last-command-p ,last-command-p))))))
+       ((= #b01  (ldb (byte 2 6) class))
+        (let ((last-command-p (zerop (ldb (byte 1 4) class)))
+              (secure-messaging (case (ldb (byte 1 5) class)
+                                  (0 'no)
+                                  (1 'sm-header-not-processed)))
+              (logical-channel   (ldb (byte 4 0) class)))
+          `(class (interindustry-further ,class
+                                         :logical-channel  ,(+ 4 logical-channel)
+                                         :secure-messaging ,secure-messaging
+                                         :last-command-p ,last-command-p))))))
 
-       (t
-        ;; proprietary class
-        `(class (proprietary ,class))))
-     `(ins ,(case ins
-              ((#x04)        'deactivate-file)
-              ((#x0C)        'erase-records)
-              ((#x0E #x0F)   'erase-binary)
-              ((#x10)        'perform-scql-operation)
-              ((#x12)        'perform-transaction-operation)
-              ((#x14)        'perform-user-operation)
-              ((#x20 #x21)   'verify)
-              ((#x22)        'manage-security-environment)
-              ((#x24)        'change-reference-data)
-              ((#x26)        'disable-verification-requirement)
-              ((#x28)        'enable-verification-requirement)
-              ((#x2A)        'perform-security-operation)
-              ((#x44)        'activate-file)
-              ((#x46)        'generate-asymetric-key-pair)
-              ((#x82)        'external/mutual-authenticate)
-              ((#x84)        'get-challenge)
-              ((#x86 #x87)   'general-authenticate)
-              ((#x88)        'internal-authenticate)
-              ((#xA0 #xA1)   'search-binary)
-              ((#xA2)        'search-record)
-              ((#xA4)        'select)
-              ((#xB0 #xB1)   'read-binary)
-              ((#xB2 #xB3)   'read-records)
-              ((#xC0)        'get-response)
-              ((#xC2 #xC3)   'envelope)
-              ((#xCA #xCB)   'get-data)
-              ((#xD0 #xD1)   'write-binary)
-              ((#xD2)        'write-record)
-              ((#xD6 #xD7)   'update-binary)
-              ((#xDA #xDB)   'put-data)
-              ((#xDC #xDD)   'update-record)
-              ((#xE0)        'create-file)
-              ((#xE2)        'append-record)
-              ((#xE4)        'delete-file)
-              ((#xE6)        'terminate-df)
-              ((#xE8)        'terminate-ef)
-              ((#xFE)        'terminate-card-usage)
-              (otherwise     `(unknown-instruction ,ins)))
-        (:data-format ,(if (zerop (ldb (byte 1 0) ins))
-                           'normal
-                           'ber-tlv))))))
+    (t
+     ;; proprietary class
+     `(class (proprietary ,class)))))
+
+(defun decode-instruction (ins p1 p2)
+  `(ins ,(case ins
+           ((#x04)        'deactivate-file)
+           ((#x0C)        'erase-records)
+           ((#x0E #x0F)   'erase-binary)
+           ((#x10)        'perform-scql-operation)
+           ((#x12)        'perform-transaction-operation)
+           ((#x14)        'perform-user-operation)
+           ((#x20 #x21)   'verify)
+           ((#x22)        'manage-security-environment)
+           ((#x24)        'change-reference-data)
+           ((#x26)        'disable-verification-requirement)
+           ((#x28)        'enable-verification-requirement)
+           ((#x2A)        'perform-security-operation)
+           ((#x44)        'activate-file)
+           ((#x46)        'generate-asymetric-key-pair)
+           ((#x82)        'external/mutual-authenticate)
+           ((#x84)        'get-challenge)
+           ((#x86 #x87)   'general-authenticate)
+           ((#x88)        'internal-authenticate)
+           ((#xA0 #xA1)   'search-binary)
+           ((#xA2)        'search-record)
+           ((#xA4)        'select)
+           ((#xB0 #xB1)   'read-binary)
+           ((#xB2 #xB3)   'read-records)
+           ((#xC0)        'get-response)
+           ((#xC2 #xC3)   'envelope)
+           ((#xCA #xCB)   'get-data)
+           ((#xD0 #xD1)   'write-binary)
+           ((#xD2)        'write-record)
+           ((#xD6 #xD7)   'update-binary)
+           ((#xDA #xDB)   'put-data)
+           ((#xDC #xDD)   'update-record)
+           ((#xE0)        'create-file)
+           ((#xE2)        'append-record)
+           ((#xE4)        'delete-file)
+           ((#xE6)        'terminate-df)
+           ((#xE8)        'terminate-ef)
+           ((#xFE)        'terminate-card-usage)
+           (otherwise     `(unknown-instruction ,ins)))
+     (:data-format ,(if (ber-tlv-p ins)
+                        'ber-tlv
+                        'normal))))
+
+(defun ber-tlv-p (ins)
+  (plusp (ldb (byte 1 0) ins)))
+
+(defun describe-command-apdu (bytes)
+  ;; When ins:ber-tlv and chaining -> collect all data and decode ber-tlv on the concatenation.
+  (multiple-value-bind (nc data ne) (decode-lengths-and-data bytes)
+    (let* ((class (aref bytes 0))
+           (ins   (aref bytes 1))
+           (p1    (aref bytes 2))
+           (p2    (aref bytes 3)))
+      (list
+       (decode-class class)
+       (decode-instruction ins p1 p2)
+       `(data (:nc ,nc) ,data
+              ,(if (ber-tlv-p ins)
+                   (dump-to-string data) #|TODO: (decode-ber-tlv data)|#
+                   (dump-to-string data) #|TODO: not in all cases (decode-simple-tlv data)|#))
+       `(response (:ne ,ne))))))
+
+
+(defun dump-to-string (bytes)
+  (with-output-to-string (*standard-output*)
+    (loop
+      :with length = (length bytes)
+      :for i :below length :by 16
+      :do (loop
+            :repeat 16
+            :for j :from i :below length
+            :do (format t "~2,'0X " (aref bytes j))
+            :finally (unless (< (+ i 16) length)
+                       (format t "~V{   ~}" (- (+ i 16) length) '(nil))))
+          (loop
+            :repeat 16
+            :for j :from i :below length
+            :for code := (aref bytes j)
+            :initially (format t "  ")
+            :do (format t "~C"  (if (<= 32 code 126)
+                                    (code-char code)
+                                    #\.))
+            :finally (format t "~%")))))
+
+;; (dump-to-string (coerce (loop for i from 30 to 198 collect i) 'vector))
 
 (defun describe-response-apdu (bytes)
   (flet ((unknown (sw1 sw2)
@@ -117,6 +214,10 @@
            (sw2 (aref bytes (- (length bytes) 1)))
            (sw  (dpb sw1 (byte 8 8) sw2)))
       `(response
+        ,@(when (plusp nr)
+            (list
+             (dump-to-string response)))
+
         ,(case sw1
 
            (#x61 `(info
@@ -227,7 +328,7 @@
            (#x6D `(checking-error
                    ,(case sw2
                       (#x00 "Instruction code not supported or invalid")
-                      (otherwise (proprietary)))))
+                      (otherwise (proprietary sw1 sw2)))))
 
            (#x6E `(checking-error
                    ,(case sw2
@@ -240,9 +341,9 @@
                       (otherwise (proprietary sw1 sw2)))))
 
            (#x90 `(info
-                  ,(case sw2
-                     (#x00 "Process completed so far")
-                     (otherwise (proprietary sw1 sw2)))))
+                   ,(case sw2
+                      (#x00 "Process completed so far")
+                      (otherwise (proprietary sw1 sw2)))))
            (otherwise
             (unknown sw1 sw2)))))))
 
@@ -267,7 +368,9 @@
     (assert (every (lambda (byte) (typep byte '(unsigned-byte 8))) data)
             (data) "Should be a vector of (unsigned-byte 8).")
     (let ((buffer (make-array (+ 1 (if (< length 254) 2 3) length)
-                              :element-type '(unsigned-byte 8))))
+                              :element-type '(unsigned-byte 8)))
+
+          start)
       (setf (aref buffer 0) type)
       (if (< length 254)
           (setf (aref buffer 1) length
@@ -282,22 +385,27 @@
 
 (defmethod encode-simple-tlv (type (data string))
   (encode-simple-tlv type (map-into (make-array (length data) :element-type '(unsigned-byte 8))
-                              (function char-code) data)))
+                                    (function char-code) data)))
 
 (defmethod encode-simple-tlv (type (data list))
   (encode-simple-tlv type (coerce data '(vector (unsigned-byte 8)))))
 
-(defmethod  decode-simple-tlv (bytes &key (start 0))
-  (let ((type (aref bytes start))
-        (len  (aref bytes (incf start))))
-    (when (= len #xff)
-      (setf len (dpb (aref bytes (incf start))
-                     (byte 8 8)
-                     (aref bytes (incf start)))))
-    (list type len
-          (if (zerop len)
-              nil
-              (make-array len :element-type '(unsigned-byte 8))))))
+(defmethod decode-simple-tlv ((bytes null) &key (start 0))
+  nil)
+
+(defmethod decode-simple-tlv ((bytes vector) &key (start 0))
+  (unless (zerop (length bytes))
+    (let ((type (aref bytes start))
+          (len  (aref bytes (incf start))))
+      (when (= len #xff)
+        (setf len (dpb (aref bytes (incf start))
+                       (byte 8 8)
+                       (aref bytes (incf start)))))
+      (list type len
+            (if (zerop len)
+                nil
+                (nsubseq bytes (+ 2 start) (+ 2 start len)))))))
+
 
 (defun test/encode-simple-tlv ()
   (assert (equalp (encode-simple-tlv 33 '(1 2 3 4))
@@ -313,13 +421,12 @@
                   #(44 255 3 232 0 0 0 2 0 4 0 6 0 8 0 10)))
   :success)
 
-(test/encode-simple-tlv)
 
-
-
-(let ((*print-right-margin* 80)
-      (*print-circle* nil))
-  (pprint (mapcar (function describe-apdu)
-                  (load-trace #P"~/src/public/test/smartcard/smartcard.trace"))))
+(defun run ()
+  (test/encode-simple-tlv)
+  (let ((*print-right-margin* 80)
+        (*print-circle* nil))
+    (pprint (mapcar (function describe-apdu)
+                    (load-trace #P"~/src/public/test/smartcard/smartcard.trace")))))
 
 
