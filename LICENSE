@@ -2,9 +2,9 @@ The sources of Clozure CL, GNU emacs, of Quicklisp, and distributed by
 quicklisp distribution are owned by their respective owners, and
 licensed under their own terms.
 
-    ccl/
-    emacs-25.3/
-    quicklisp.tar.xz
+    dependencies/ccl/
+    dependencies/emacs-25.3/
+    dependencies/quicklisp.tar.xz
 
 
 The rest of this test repository is proprietary (for now):
