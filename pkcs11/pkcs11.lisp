@@ -755,13 +755,14 @@
 
 (defun string-to-utf-8 (string &key size padchar)
   ;; TODO: actually convert to utf-8
-  (let ((bytes (map 'vector (lambda (ch)
-                        (let ((code (char-code ch)))
-                          (if (<= 32 code 126)
-                              code
-                              (error "Unicode not supported yet: ~C (~D) in ~S"
-                                     (code-char code) code string))))
-                 string)))
+  (let ((bytes (map '(vector (unsigned-byte 8))
+		    (lambda (ch)
+		      (let ((code (char-code ch)))
+			(if (<= 32 code 126)
+			    code
+			    (error "Unicode not supported yet: ~C (~D) in ~S"
+				   (code-char code) code string))))
+		    string)))
     (when (and size (< size (length bytes)))
       (setf bytes (subseq bytes 0 size)))
     (when (and padchar size (< (length bytes) size))
@@ -769,7 +770,7 @@
         (unless (<= 32 code 126)
             (error "Unicode not supported yet: ~C (~D) pad-character"
                    (code-char code) code))
-        (setf bytes (concatenate 'vector bytes
+        (setf bytes (concatenate '(vector (unsigned-byte 8)) bytes
                                  (make-array (- size (length bytes)) :initial-element code)))))
     bytes))
 
